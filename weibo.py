@@ -793,7 +793,7 @@ class Weibo(object):
         try:
             from pymongo import MongoClient
 
-            client = MongoClient()
+            client = MongoClient('mongodb://3.23.34.215/', username='ysy', password='Ysy19980219')
             db = client['weibo']
             collection = db[collection]
             if len(self.write_mode) > 1:
@@ -939,17 +939,17 @@ class Weibo(object):
                          user_config_file_path)
             for i, line in enumerate(lines):
                 info = line.split(' ')
-                if len(info) > 0 and info[0].isdigit():
-                    if self.user_config['user_id'] == info[0]:
-                        if len(info) == 1:
-                            info.append(self.user['screen_name'])
-                            info.append(self.start_date)
-                        if len(info) == 2:
-                            info.append(self.start_date)
-                        if len(info) > 2:
-                            info[2] = self.start_date
-                        lines[i] = ' '.join(info)
-                        break
+                # if len(info) > 0 and info[0].isdigit():
+                #     if self.user_config['user_id'] == info[0]:
+                #         if len(info) == 1:
+                #             info.append(self.user['screen_name'])
+                #             info.append(self.start_date)
+                #         if len(info) == 2:
+                #             info.append(self.start_date)
+                #         if len(info) > 2:
+                #             info[2] = self.start_date
+                #         lines[i] = ' '.join(info)
+                #         break
         with codecs.open(user_config_file_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
 
