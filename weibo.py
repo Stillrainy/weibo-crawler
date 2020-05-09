@@ -793,7 +793,7 @@ class Weibo(object):
         try:
             from pymongo import MongoClient
 
-            client = MongoClient('mongodb://3.23.34.215/', username='ysy', password='Ysy19980219')
+            client = MongoClient()
             db = client['weibo']
             collection = db[collection]
             if len(self.write_mode) > 1:
