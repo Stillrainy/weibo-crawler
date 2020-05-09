@@ -31,7 +31,7 @@ class Weibo(object):
             since_date = str(date.today() - timedelta(int(since_date)))
         self.since_date = since_date  # 起始时间，即爬取发布日期从该值到现在的微博，形式为yyyy-mm-dd
         self.write_mode = config[
-            'write_mode']  # 结果信息保存类型，为list形式，可包含csv、mongo和mysql三种类型
+            'write_mode']  # 结果信息保存类型，为list形式，可包含csv、mongo
         self.original_pic_download = config[
             'original_pic_download']  # 取值范围为0、1, 0代表不下载原创微博图片,1代表下载
         self.retweet_pic_download = config[
@@ -41,7 +41,7 @@ class Weibo(object):
         self.retweet_video_download = config[
             'retweet_video_download']  # 取值范围为0、1, 0代表不下载转发微博视频,1代表下载
         self.cookie = {'Cookie': config.get('cookie')}  # 微博cookie，可填可不填
-        self.mysql_config = config.get('mysql_config')  # MySQL数据库连接配置，可以不填
+        self.mongo_credentials = config['mongo_credentials'] # mongoBD 连接字符串
         user_id_list = config['user_id_list']
         if not isinstance(user_id_list, list):
             if not os.path.isabs(user_id_list):
@@ -81,13 +81,13 @@ class Weibo(object):
             sys.exit(u'since_date值应为yyyy-mm-dd形式或整数,请重新输入')
 
         # 验证write_mode
-        write_mode = ['csv', 'json', 'mongo', 'mysql']
+        write_mode = ['csv', 'json', 'mongo']
         if not isinstance(config['write_mode'], list):
             sys.exit(u'write_mode值应为list类型')
         for mode in config['write_mode']:
             if mode not in write_mode:
                 sys.exit(
-                    u'%s为无效模式，请从csv、json、mongo和mysql中挑选一个或多个作为write_mode' %
+                    u'%s为无效模式，请从csv、json、mongo中挑选一个或多个作为write_mode' %
                     mode)
 
         # 验证user_id_list
@@ -149,54 +149,9 @@ class Weibo(object):
         self.info_to_mongodb('user', user_list)
         print(u'%s信息写入MongoDB数据库完毕' % self.user['screen_name'])
 
-    def user_to_mysql(self):
-        """将爬取的用户信息写入MySQL数据库"""
-        mysql_config = {
-            'host': 'localhost',
-            'port': 3306,
-            'user': 'root',
-            'password': '123456',
-            'charset': 'utf8mb4'
-        }
-        # 创建'weibo'数据库
-        create_database = """CREATE DATABASE IF NOT EXISTS weibo DEFAULT
-                         CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"""
-        self.mysql_create_database(mysql_config, create_database)
-        # 创建'user'表
-        create_table = """
-                CREATE TABLE IF NOT EXISTS user (
-                id varchar(20) NOT NULL,
-                screen_name varchar(30),
-                gender varchar(10),
-                statuses_count INT,
-                followers_count INT,
-                follow_count INT,
-                registration_time varchar(20),
-                sunshine varchar(20),
-                birthday varchar(40),
-                location varchar(200),
-                education varchar(200),
-                company varchar(200),
-                description varchar(140),
-                profile_url varchar(200),
-                profile_image_url varchar(200),
-                avatar_hd varchar(200),
-                urank INT,
-                mbrank INT,
-                verified BOOLEAN DEFAULT 0,
-                verified_type INT,
-                verified_reason varchar(140),
-                PRIMARY KEY (id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
-        self.mysql_create_table(mysql_config, create_table)
-        self.mysql_insert(mysql_config, 'user', [self.user])
-        print(u'%s信息写入MySQL数据库完毕' % self.user['screen_name'])
-
     def user_to_database(self):
         """将用户信息写入文件/数据库"""
         self.user_to_csv()
-        if 'mysql' in self.write_mode:
-            self.user_to_mysql()
         if 'mongo' in self.write_mode:
             self.user_to_mongodb()
 
@@ -384,7 +339,7 @@ class Weibo(object):
             file_dir = file_dir + os.sep + describe
             if not os.path.isdir(file_dir):
                 os.makedirs(file_dir)
-            for w in tqdm(self.weibo[wrote_count:], desc='Download progress'):
+            for w in tqdm(self.weibo[wrote_count:], desc='Download progress', ncols=75):
                 if weibo_type == 'retweet':
                     if w.get('retweet'):
                         w = w['retweet']
@@ -793,7 +748,7 @@ class Weibo(object):
         try:
             from pymongo import MongoClient
 
-            client = MongoClient()
+            client = MongoClient(self.mongo_credentials)
             db = client['weibo']
             collection = db[collection]
             if len(self.write_mode) > 1:
@@ -812,121 +767,6 @@ class Weibo(object):
         """将爬取的微博信息写入MongoDB数据库"""
         self.info_to_mongodb('weibo', self.weibo[wrote_count:])
         print(u'%d条微博写入MongoDB数据库完毕' % self.got_count)
-
-    def mysql_create(self, connection, sql):
-        """创建MySQL数据库或表"""
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(sql)
-        finally:
-            connection.close()
-
-    def mysql_create_database(self, mysql_config, sql):
-        """创建MySQL数据库"""
-        try:
-            import pymysql
-        except ImportError:
-            sys.exit(u'系统中可能没有安装pymysql库，请先运行 pip install pymysql ，再运行程序')
-        try:
-            if self.mysql_config:
-                mysql_config = self.mysql_config
-            connection = pymysql.connect(**mysql_config)
-            self.mysql_create(connection, sql)
-        except pymysql.OperationalError:
-            sys.exit(u'系统中可能没有安装或正确配置MySQL数据库，请先根据系统环境安装或配置MySQL，再运行程序')
-
-    def mysql_create_table(self, mysql_config, sql):
-        """创建MySQL表"""
-        import pymysql
-
-        if self.mysql_config:
-            mysql_config = self.mysql_config
-        mysql_config['db'] = 'weibo'
-        connection = pymysql.connect(**mysql_config)
-        self.mysql_create(connection, sql)
-
-    def mysql_insert(self, mysql_config, table, data_list):
-        """向MySQL表插入或更新数据"""
-        import pymysql
-
-        if len(data_list) > 0:
-            keys = ', '.join(data_list[0].keys())
-            values = ', '.join(['%s'] * len(data_list[0]))
-            if self.mysql_config:
-                mysql_config = self.mysql_config
-            mysql_config['db'] = 'weibo'
-            connection = pymysql.connect(**mysql_config)
-            cursor = connection.cursor()
-            sql = """INSERT INTO {table}({keys}) VALUES ({values}) ON
-                     DUPLICATE KEY UPDATE""".format(table=table,
-                                                    keys=keys,
-                                                    values=values)
-            update = ','.join([
-                " {key} = values({key})".format(key=key)
-                for key in data_list[0]
-            ])
-            sql += update
-            try:
-                cursor.executemany(
-                    sql, [tuple(data.values()) for data in data_list])
-                connection.commit()
-            except Exception as e:
-                connection.rollback()
-                print('Error: ', e)
-                traceback.print_exc()
-            finally:
-                connection.close()
-
-    def weibo_to_mysql(self, wrote_count):
-        """将爬取的微博信息写入MySQL数据库"""
-        mysql_config = {
-            'host': 'localhost',
-            'port': 3306,
-            'user': 'root',
-            'password': '123456',
-            'charset': 'utf8mb4'
-        }
-        # 创建'weibo'表
-        create_table = """
-                CREATE TABLE IF NOT EXISTS weibo (
-                id varchar(20) NOT NULL,
-                bid varchar(12) NOT NULL,
-                user_id varchar(20),
-                screen_name varchar(30),
-                text varchar(2000),
-                topics varchar(200),
-                at_users varchar(1000),
-                pics varchar(3000),
-                video_url varchar(1000),
-                location varchar(100),
-                created_at DATETIME,
-                source varchar(30),
-                attitudes_count INT,
-                comments_count INT,
-                reposts_count INT,
-                retweet_id varchar(20),
-                PRIMARY KEY (id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"""
-        self.mysql_create_table(mysql_config, create_table)
-        weibo_list = []
-        retweet_list = []
-        if len(self.write_mode) > 1:
-            info_list = copy.deepcopy(self.weibo[wrote_count:])
-        else:
-            info_list = self.weibo[wrote_count:]
-        for w in info_list:
-            if 'retweet' in w:
-                w['retweet']['retweet_id'] = ''
-                retweet_list.append(w['retweet'])
-                w['retweet_id'] = w['retweet']['id']
-                del w['retweet']
-            else:
-                w['retweet_id'] = ''
-            weibo_list.append(w)
-        # 在'weibo'表中插入或更新微博数据
-        self.mysql_insert(mysql_config, 'weibo', retweet_list)
-        self.mysql_insert(mysql_config, 'weibo', weibo_list)
-        print(u'%d条微博写入MySQL数据库完毕' % self.got_count)
 
     def update_user_config_file(self, user_config_file_path):
         """更新用户配置文件"""
@@ -960,8 +800,6 @@ class Weibo(object):
                 self.write_csv(wrote_count)
             if 'json' in self.write_mode:
                 self.write_json(wrote_count)
-            if 'mysql' in self.write_mode:
-                self.weibo_to_mysql(wrote_count)
             if 'mongo' in self.write_mode:
                 self.weibo_to_mongodb(wrote_count)
             if self.original_pic_download:
@@ -988,7 +826,7 @@ class Weibo(object):
                 page1 = 0
                 random_pages = random.randint(1, 5)
                 self.start_date = datetime.now().strftime('%Y-%m-%d')
-                for page in tqdm(range(1, page_count + 1), desc='Progress'):
+                for page in tqdm(range(1, page_count + 1), desc='Progress', ncols=75):
                     is_end = self.get_one_page(page)
                     if is_end:
                         break
@@ -1057,7 +895,7 @@ class Weibo(object):
             traceback.print_exc()
 
 
-def main():
+def main(specify_uid=None):
     try:
         config_path = os.path.split(
             os.path.realpath(__file__))[0] + os.sep + 'config.json'
@@ -1070,12 +908,18 @@ def main():
             except ValueError:
                 sys.exit(u'config.json 格式不正确，请参考 '
                          u'https://github.com/dataabc/weibo-crawler#3程序设置')
+        if specify_uid:
+            config['user_id_list'] = [specify_uid]
+        print(config)
         wb = Weibo(config)
-        wb.start()  # 爬取微博信息
+        wb.start()
+        return 0
+
     except Exception as e:
         print('Error: ', e)
         traceback.print_exc()
+        return e
 
 
 if __name__ == '__main__':
-    main()
+    main("1669879400")
